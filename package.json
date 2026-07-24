@@ -9,7 +9,7 @@
     "clean": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"if (Test-Path node_modules) { Remove-Item -Recurse -Force node_modules }; if (Test-Path dist) { Remove-Item -Recurse -Force dist }\"",
     "build": "node ./node_modules/@nestjs/cli/bin/nest.js build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start": "node ./node_modules/@nestjs/cli/bin/nest.js start",
+    "start": "node dist/main",
     "start:dev": "node ./node_modules/@nestjs/cli/bin/nest.js start --watch",
     "start:debug": "node ./node_modules/@nestjs/cli/bin/nest.js start --debug --watch",
     "start:prod": "node dist/main",
