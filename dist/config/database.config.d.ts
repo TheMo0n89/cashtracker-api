@@ -10,6 +10,16 @@ declare const _default: (() => {
     ssl: boolean | {
         rejectUnauthorized: boolean;
     };
+    poolSize: number;
+    connectTimeoutMS: number;
+    extra: {
+        max: number;
+        idleTimeoutMillis: number;
+        connectionTimeoutMillis: number;
+        ssl: boolean | {
+            rejectUnauthorized: boolean;
+        };
+    };
 }) & import("@nestjs/config").ConfigFactoryKeyHost<{
     type: "postgres";
     host: string;
@@ -21,6 +31,16 @@ declare const _default: (() => {
     logging: boolean;
     ssl: boolean | {
         rejectUnauthorized: boolean;
+    };
+    poolSize: number;
+    connectTimeoutMS: number;
+    extra: {
+        max: number;
+        idleTimeoutMillis: number;
+        connectionTimeoutMillis: number;
+        ssl: boolean | {
+            rejectUnauthorized: boolean;
+        };
     };
 }>;
 export default _default;

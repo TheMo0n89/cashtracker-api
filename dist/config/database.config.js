@@ -11,5 +11,13 @@ exports.default = (0, config_1.registerAs)('database', () => ({
     synchronize: false,
     logging: process.env.NODE_ENV === 'development',
     ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false },
+    poolSize: parseInt(process.env.DB_POOL_SIZE || '10', 10),
+    connectTimeoutMS: 10000,
+    extra: {
+        max: parseInt(process.env.DB_POOL_SIZE || '10', 10),
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
+        ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false },
+    },
 }));
 //# sourceMappingURL=database.config.js.map

@@ -1,0 +1,167 @@
+name: Deploy to Render
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: render-deploy
+  cancel-in-progress: false
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────
+  # JOB 1 — Build & Validate
+  # ────────────────────────────────────────────────────────────────────────
+  build:
+    name: Build & Validate
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      # ── 2. Entorno ─────────────────────────────────────────────────────
+      - name: Log environment info
+        run: |
+          echo "::group::Environment Info"
+          echo "Runner OS     : $RUNNER_OS"
+          echo "Runner Arch   : $RUNNER_ARCH"
+          echo "Git SHA       : $GITHUB_SHA"
+          echo "Git Ref       : $GITHUB_REF"
+          echo "Triggered by  : $GITHUB_ACTOR"
+          echo "Workflow      : $GITHUB_WORKFLOW"
+          echo "Timestamp     : $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          df -h / | tail -1 | awk '{print "Disk free     : "$4}'
+          echo "::endgroup::"
+
+      # ── 3. Node.js ─────────────────────────────────────────────────────
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Log Node / npm versions
+        run: |
+          echo "::group::Toolchain Versions"
+          node --version
+          npm --version
+          echo "::endgroup::"
+
+      # ── 4. Install ─────────────────────────────────────────────────────
+      - name: Install dependencies
+        run: |
+          echo "::group::npm ci"
+          npm ci 2>&1
+          echo "::endgroup::"
+          echo "Packages installed: $(ls node_modules | wc -l)"
+
+      # ── 5. Build ───────────────────────────────────────────────────────
+      - name: Compile TypeScript (NestJS build)
+        id: build
+        run: |
+          echo "::group::NestJS Build Output"
+          set +e
+          npm run build 2>&1 | tee /tmp/build.log
+          BUILD_EXIT=${PIPESTATUS[0]}
+          echo "::endgroup::"
+
+          if [ "$BUILD_EXIT" -ne 0 ]; then
+            echo "::error title=Build Failed::TypeScript compilation failed. See 'NestJS Build Output' above for details."
+            echo "build_status=failed" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          echo "build_status=success" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Build OK::TypeScript compiled successfully."
+
+      # ── 6. Build artifact (subido solo si falla) ───────────────────────
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ github.sha }}
+          path: /tmp/build.log
+          retention-days: 7
+
+      # ── 7. Resumen del job ─────────────────────────────────────────────
+      - name: Write job summary
+        if: always()
+        run: |
+          STATUS="${{ steps.build.outputs.build_status }}"
+          {
+            echo "## Build Summary"
+            echo ""
+            echo "| Campo | Valor |"
+            echo "|---|---|"
+            echo "| Commit | \`$GITHUB_SHA\` |"
+            echo "| Rama   | \`$GITHUB_REF_NAME\` |"
+            echo "| Estado | $([ '$STATUS' = 'success' ] && echo 'PASSED' || echo 'FAILED') |"
+            echo "| Hora   | $(date -u '+%Y-%m-%dT%H:%M:%SZ') |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ────────────────────────────────────────────────────────────────────────
+  # JOB 2 — Deploy to Render
+  # ────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Trigger Render Deploy
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: production
+      url: https://cashtracker-api-mggy.onrender.com
+
+    steps:
+      # ── 1. Trigger hook ────────────────────────────────────────────────
+      - name: Trigger Render Deploy Hook
+        id: render
+        run: |
+          echo "::group::Render Deploy Hook — Request"
+          echo "Timestamp : $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          echo "Commit SHA: $GITHUB_SHA"
+          echo "::endgroup::"
+
+          HTTP_CODE=$(curl -s \
+            -o /tmp/render_response.json \
+            -w "%{http_code}" \
+            -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}")
+
+          echo "::group::Render Deploy Hook — Response"
+          echo "HTTP Status : $HTTP_CODE"
+          echo "Response body:"
+          cat /tmp/render_response.json | python3 -m json.tool 2>/dev/null || cat /tmp/render_response.json
+          echo "::endgroup::"
+
+          DEPLOY_ID=$(cat /tmp/render_response.json | python3 -c \
+            "import sys, json; d=json.load(sys.stdin); print(d.get('deploy',{}).get('id','unknown'))" 2>/dev/null || echo "unknown")
+
+          echo "deploy_id=$DEPLOY_ID"     >> "$GITHUB_OUTPUT"
+          echo "http_code=$HTTP_CODE"     >> "$GITHUB_OUTPUT"
+
+          if [[ "$HTTP_CODE" != "200" && "$HTTP_CODE" != "201" ]]; then
+            echo "::error title=Deploy Hook Failed::Render responded with HTTP $HTTP_CODE. Check the response body in 'Render Deploy Hook — Response' above."
+            exit 1
+          fi
+
+          echo "::notice title=Deploy Triggered::Deploy queued on Render. Deploy ID: $DEPLOY_ID"
+
+      # ── 2. Resumen del deploy ──────────────────────────────────────────
+      - name: Write deploy summary
+        if: always()
+        run: |
+          HTTP="${{ steps.render.outputs.http_code }}"
+          DEPLOY_ID="${{ steps.render.outputs.deploy_id }}"
+          {
+            echo "## Render Deploy Summary"
+            echo ""
+            echo "| Campo | Valor |"
+            echo "|---|---|"
+            echo "| Commit    | \`$GITHUB_SHA\` |"
+            echo "| HTTP Code | \`$HTTP\` |"
+            echo "| Deploy ID | \`$DEPLOY_ID\` |"
+            echo "| Dashboard | [Render Dashboard](https://dashboard.render.com) |"
+            echo "| API URL   | [cashtracker-api-mggy.onrender.com](https://cashtracker-api-mggy.onrender.com) |"
+          } >> "$GITHUB_STEP_SUMMARY"
