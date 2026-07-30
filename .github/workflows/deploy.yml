@@ -19,11 +19,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ── 1. Checkout ────────────────────────────────────────────────────
       - name: Checkout source
         uses: actions/checkout@v4
 
-      # ── 2. Entorno ─────────────────────────────────────────────────────
       - name: Log environment info
         run: |
           echo "::group::Environment Info"
@@ -32,12 +30,10 @@ jobs:
           echo "Git SHA       : $GITHUB_SHA"
           echo "Git Ref       : $GITHUB_REF"
           echo "Triggered by  : $GITHUB_ACTOR"
-          echo "Workflow      : $GITHUB_WORKFLOW"
           echo "Timestamp     : $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
           df -h / | tail -1 | awk '{print "Disk free     : "$4}'
           echo "::endgroup::"
 
-      # ── 3. Node.js ─────────────────────────────────────────────────────
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
@@ -51,7 +47,6 @@ jobs:
           npm --version
           echo "::endgroup::"
 
-      # ── 4. Install ─────────────────────────────────────────────────────
       - name: Install dependencies
         run: |
           echo "::group::npm ci"
@@ -59,7 +54,6 @@ jobs:
           echo "::endgroup::"
           echo "Packages installed: $(ls node_modules | wc -l)"
 
-      # ── 5. Build ───────────────────────────────────────────────────────
       - name: Compile TypeScript (NestJS build)
         id: build
         run: |
@@ -70,7 +64,7 @@ jobs:
           echo "::endgroup::"
 
           if [ "$BUILD_EXIT" -ne 0 ]; then
-            echo "::error title=Build Failed::TypeScript compilation failed. See 'NestJS Build Output' above for details."
+            echo "::error title=Build Failed::TypeScript compilation failed. See 'NestJS Build Output' group above for details."
             echo "build_status=failed" >> "$GITHUB_OUTPUT"
             exit 1
           fi
@@ -78,7 +72,6 @@ jobs:
           echo "build_status=success" >> "$GITHUB_OUTPUT"
           echo "::notice title=Build OK::TypeScript compiled successfully."
 
-      # ── 6. Build artifact (subido solo si falla) ───────────────────────
       - name: Upload build log on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -87,19 +80,23 @@ jobs:
           path: /tmp/build.log
           retention-days: 7
 
-      # ── 7. Resumen del job ─────────────────────────────────────────────
-      - name: Write job summary
+      - name: Write build job summary
         if: always()
         run: |
-          STATUS="${{ steps.build.outputs.build_status }}"
+          BUILD_STATUS="${{ steps.build.outputs.build_status }}"
+          if [ "$BUILD_STATUS" = "success" ]; then
+            ESTADO="PASSED"
+          else
+            ESTADO="FAILED"
+          fi
           {
             echo "## Build Summary"
             echo ""
-            echo "| Campo | Valor |"
-            echo "|---|---|"
+            echo "| Campo  | Valor |"
+            echo "|--------|-------|"
             echo "| Commit | \`$GITHUB_SHA\` |"
             echo "| Rama   | \`$GITHUB_REF_NAME\` |"
-            echo "| Estado | $([ '$STATUS' = 'success' ] && echo 'PASSED' || echo 'FAILED') |"
+            echo "| Estado | $ESTADO |"
             echo "| Hora   | $(date -u '+%Y-%m-%dT%H:%M:%SZ') |"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -115,40 +112,66 @@ jobs:
       url: https://cashtracker-api-mggy.onrender.com
 
     steps:
-      # ── 1. Trigger hook ────────────────────────────────────────────────
+      # Valida que el secret está configurado ANTES de llamar a curl
+      - name: Validate RENDER_DEPLOY_HOOK_URL secret
+        run: |
+          if [ -z "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" ]; then
+            echo "::error title=Secret Faltante::El secret RENDER_DEPLOY_HOOK_URL no está configurado."
+            echo "::error::Ve a: GitHub repo → Settings → Secrets and variables → Actions → New repository secret"
+            echo "::error::Nombre: RENDER_DEPLOY_HOOK_URL"
+            echo "::error::Valor:  Render Dashboard → tu servicio → Settings → Deploy Hooks → Add Deploy Hook"
+            exit 1
+          fi
+          echo "::notice::Secret RENDER_DEPLOY_HOOK_URL detectado correctamente."
+
       - name: Trigger Render Deploy Hook
         id: render
         run: |
           echo "::group::Render Deploy Hook — Request"
           echo "Timestamp : $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
           echo "Commit SHA: $GITHUB_SHA"
+          echo "Hook URL  : [REDACTED — secret]"
           echo "::endgroup::"
 
           HTTP_CODE=$(curl -s \
+            --max-time 30 \
             -o /tmp/render_response.json \
             -w "%{http_code}" \
             -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}")
+          CURL_EXIT=$?
 
           echo "::group::Render Deploy Hook — Response"
-          echo "HTTP Status : $HTTP_CODE"
-          echo "Response body:"
-          cat /tmp/render_response.json | python3 -m json.tool 2>/dev/null || cat /tmp/render_response.json
+          echo "curl exit code : $CURL_EXIT"
+          echo "HTTP Status    : $HTTP_CODE"
+          echo "Response body  :"
+          python3 -m json.tool /tmp/render_response.json 2>/dev/null || cat /tmp/render_response.json
           echo "::endgroup::"
 
-          DEPLOY_ID=$(cat /tmp/render_response.json | python3 -c \
-            "import sys, json; d=json.load(sys.stdin); print(d.get('deploy',{}).get('id','unknown'))" 2>/dev/null || echo "unknown")
-
-          echo "deploy_id=$DEPLOY_ID"     >> "$GITHUB_OUTPUT"
-          echo "http_code=$HTTP_CODE"     >> "$GITHUB_OUTPUT"
-
-          if [[ "$HTTP_CODE" != "200" && "$HTTP_CODE" != "201" ]]; then
-            echo "::error title=Deploy Hook Failed::Render responded with HTTP $HTTP_CODE. Check the response body in 'Render Deploy Hook — Response' above."
+          # curl exit code 3 = URL malformada / secret vacío
+          if [ "$CURL_EXIT" -eq 3 ]; then
+            echo "::error title=URL Malformada (curl exit 3)::El secret RENDER_DEPLOY_HOOK_URL está vacío o tiene formato incorrecto."
             exit 1
           fi
 
-          echo "::notice title=Deploy Triggered::Deploy queued on Render. Deploy ID: $DEPLOY_ID"
+          if [ "$CURL_EXIT" -ne 0 ]; then
+            echo "::error title=curl Error $CURL_EXIT::Fallo de red al llamar al deploy hook. curl exit=$CURL_EXIT"
+            exit 1
+          fi
 
-      # ── 2. Resumen del deploy ──────────────────────────────────────────
+          DEPLOY_ID=$(python3 -c \
+            "import sys, json; d=json.load(open('/tmp/render_response.json')); print(d.get('deploy',{}).get('id','unknown'))" \
+            2>/dev/null || echo "unknown")
+
+          echo "deploy_id=$DEPLOY_ID" >> "$GITHUB_OUTPUT"
+          echo "http_code=$HTTP_CODE"  >> "$GITHUB_OUTPUT"
+
+          if [[ "$HTTP_CODE" != "200" && "$HTTP_CODE" != "201" ]]; then
+            echo "::error title=Deploy Hook HTTP $HTTP_CODE::Render rechazó el deploy. Ver 'Render Deploy Hook — Response' arriba."
+            exit 1
+          fi
+
+          echo "::notice title=Deploy Triggered::Deploy en cola en Render. Deploy ID: $DEPLOY_ID"
+
       - name: Write deploy summary
         if: always()
         run: |
@@ -157,11 +180,12 @@ jobs:
           {
             echo "## Render Deploy Summary"
             echo ""
-            echo "| Campo | Valor |"
-            echo "|---|---|"
-            echo "| Commit    | \`$GITHUB_SHA\` |"
-            echo "| HTTP Code | \`$HTTP\` |"
-            echo "| Deploy ID | \`$DEPLOY_ID\` |"
-            echo "| Dashboard | [Render Dashboard](https://dashboard.render.com) |"
-            echo "| API URL   | [cashtracker-api-mggy.onrender.com](https://cashtracker-api-mggy.onrender.com) |"
+            echo "| Campo      | Valor |"
+            echo "|------------|-------|"
+            echo "| Commit     | \`$GITHUB_SHA\` |"
+            echo "| HTTP Code  | \`${HTTP:-N/A}\` |"
+            echo "| Deploy ID  | \`${DEPLOY_ID:-N/A}\` |"
+            echo "| Dashboard  | [Render Dashboard](https://dashboard.render.com) |"
+            echo "| API URL    | [cashtracker-api-mggy.onrender.com](https://cashtracker-api-mggy.onrender.com) |"
+            echo "| Hora       | $(date -u '+%Y-%m-%dT%H:%M:%SZ') |"
           } >> "$GITHUB_STEP_SUMMARY"
