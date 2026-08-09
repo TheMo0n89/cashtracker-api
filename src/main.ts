@@ -148,9 +148,9 @@ async function bootstrap() {
 
   // Start
   const port = configService.get<number>('app.port') ?? 3001;
-  await app.listen(port);
-  logger.log(`🚀 CashTracker API running on http://localhost:${port}`);
-  logger.log(`📚 Swagger docs available at http://localhost:${port}/api/docs`);
+  await app.listen(port, '0.0.0.0');
+  logger.log(`🚀 CashTracker API running on 0.0.0.0:${port}`);
+  logger.log(`📚 Swagger docs available at http://0.0.0.0:${port}/api/docs`);
 }
 
 bootstrap();
