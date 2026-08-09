@@ -16,6 +16,7 @@ import {
 
 // Feature modules
 import { SharedModule } from './shared/shared.module';
+import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { CategoryGroupsModule } from './category-groups/category-groups.module';
@@ -90,6 +91,7 @@ import { SavingsGoalContribution } from './savings-goals/entities/savings-goal-c
 
     // Feature modules
     SharedModule,
+    HealthModule,
     AuthModule,
     UsersModule,
     CategoryGroupsModule,
