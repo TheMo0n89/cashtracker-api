@@ -75,6 +75,11 @@ import { SavingsGoalContribution } from './savings-goals/entities/savings-goal-c
         ssl: configService.get<boolean | { rejectUnauthorized: boolean }>(
           'database.ssl',
         ),
+        // Fail fast: 2 retries × (10s timeout + 1s delay) ≈ 22s max.
+        // Default is 10 retries × (10s + 3s) ≈ 130s hang — Render sees timeout
+        // before the process ever crashes with a useful error message.
+        retryAttempts: 2,
+        retryDelay: 1000,
       }),
     }),
 
