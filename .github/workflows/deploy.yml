@@ -213,7 +213,7 @@ jobs:
           echo "deploy_id=$DEPLOY_ID" >> "$GITHUB_OUTPUT"
           echo "http_code=$HTTP_CODE"  >> "$GITHUB_OUTPUT"
 
-          if [[ "$HTTP_CODE" != "200" && "$HTTP_CODE" != "201" ]]; then
+          if [[ "$HTTP_CODE" != "200" && "$HTTP_CODE" != "201" && "$HTTP_CODE" != "202" ]]; then
             echo "::error title=Deploy Hook HTTP $HTTP_CODE::Render rechazó el deploy. Ver response arriba."
             exit 1
           fi
