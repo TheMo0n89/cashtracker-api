@@ -61,6 +61,21 @@ function validateEnvironment(): void {
   console.log('[ENV CHECK] Required variables:');
   present.forEach((line) => console.log(line));
 
+  const databaseHost = process.env.DB_HOST || '';
+  const databaseUsername = process.env.DB_USERNAME || '';
+  const usesSupabasePooler = databaseHost.includes('.pooler.supabase.com');
+  const poolerUsernameConfigured =
+    !usesSupabasePooler || databaseUsername.startsWith('postgres.');
+  console.log(
+    `[DATABASE CHECK] supabasePooler=${usesSupabasePooler} poolerUsernameConfigured=${poolerUsernameConfigured}`,
+  );
+
+  if (!poolerUsernameConfigured) {
+    missing.push(
+      '  ❌  DB_USERNAME                  — Supabase pooler requires postgres.<project-ref>',
+    );
+  }
+
   if (missing.length > 0) {
     console.error(
       '\n[Bootstrap] ❌ STARTUP ABORTED — Missing required environment variables:',
