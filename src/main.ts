@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -9,6 +10,7 @@ import { DomainExceptionFilter } from './shared/filters/domain-exception.filter'
 import { AllExceptionsFilter } from './shared/filters/all-exceptions.filter';
 import { TransformInterceptor } from './shared/interceptors/transform.interceptor';
 import { LoggingInterceptor } from './shared/interceptors/logging.interceptor';
+import { DataSource } from 'typeorm';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fail-fast environment validation
@@ -50,33 +52,36 @@ function validateEnvironment(): void {
   if (!nodeOpts.includes('--max-old-space-size')) {
     console.warn(
       '[Bootstrap] ⚠️  NODE_OPTIONS does not include --max-old-space-size.\n' +
-      '           Render Free (512 MB) requires: NODE_OPTIONS=--max-old-space-size=460\n' +
-      '           Without this, the process may crash with heap OOM under load.',
+        '           Render Free (512 MB) requires: NODE_OPTIONS=--max-old-space-size=460\n' +
+        '           Without this, the process may crash with heap OOM under load.',
     );
   }
 
-  console.log('[Bootstrap] Environment pre-flight check:');
+  console.log(`[ENV CHECK] NODE_ENV=${process.env.NODE_ENV}`);
+  console.log('[ENV CHECK] Required variables:');
   present.forEach((line) => console.log(line));
 
   if (missing.length > 0) {
-    console.error('\n[Bootstrap] ❌ STARTUP ABORTED — Missing required environment variables:');
+    console.error(
+      '\n[Bootstrap] ❌ STARTUP ABORTED — Missing required environment variables:',
+    );
     missing.forEach((line) => console.error(line));
     console.error(
       '\n  → Set these variables in: Render Dashboard → cashtracker-api → Environment\n' +
-      '  → Then redeploy the service.',
+        '  → Then redeploy the service.',
     );
     process.exit(1);
   }
 
-  console.log('[Bootstrap] ✅ All required environment variables are present.\n');
+  console.log('[ENV CHECK] Required variables validated.\n');
 }
 
 validateEnvironment();
 
-
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
+  const dataSource = app.get(DataSource);
   const logger = new Logger('Bootstrap');
 
   // Security
@@ -90,7 +95,7 @@ async function bootstrap() {
     ),
   );
   logger.log(
-    `CORS allowed origins: ${Array.from(allowedOrigins).join(', ')}`,
+    `[CORS CHECK] Allowed origins loaded: ${Array.from(allowedOrigins).join(', ')}`,
   );
   app.enableCors({
     origin: (
@@ -149,8 +154,9 @@ async function bootstrap() {
   // Start
   const port = configService.get<number>('app.port') ?? 3001;
   await app.listen(port, '0.0.0.0');
-  logger.log(`🚀 CashTracker API running on 0.0.0.0:${port}`);
-  logger.log(`📚 Swagger docs available at http://0.0.0.0:${port}/api/docs`);
+  logger.log(`[DATABASE] Connection successful=${dataSource.isInitialized}`);
+  logger.log(`[SERVER] Listening on 0.0.0.0:${port}`);
+  logger.log(`[SERVER] Git commit=${process.env.RENDER_GIT_COMMIT || 'local'}`);
 }
 
-bootstrap();
+void bootstrap();

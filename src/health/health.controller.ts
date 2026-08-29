@@ -1,5 +1,6 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { DataSource } from 'typeorm';
 
 /**
  * Lightweight health check endpoint.
@@ -12,12 +13,15 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 @ApiTags('Health')
 @Controller('v1/health')
 export class HealthController {
+  constructor(private readonly dataSource: DataSource) {}
+
   @Get()
   @ApiOperation({ summary: 'Process liveness check (no DB dependency)' })
   check() {
     return {
       status: 'ok',
       service: 'cashtracker-api',
+      commit: process.env.RENDER_GIT_COMMIT || 'local',
       timestamp: new Date().toISOString(),
       uptime: Math.floor(process.uptime()),
       nodeVersion: process.version,
@@ -27,5 +31,20 @@ export class HealthController {
         rssMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
       },
     };
+  }
+
+  @Get('ready')
+  @ApiOperation({ summary: 'Readiness check including database connectivity' })
+  async ready() {
+    try {
+      await this.dataSource.query('SELECT 1');
+      return {
+        status: 'ok',
+        database: 'connected',
+        commit: process.env.RENDER_GIT_COMMIT || 'local',
+      };
+    } catch {
+      throw new ServiceUnavailableException('Database unavailable');
+    }
   }
 }
