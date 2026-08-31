@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  API_URL: https://cashtracker-api-s7o6.onrender.com
+  API_URL: https://cashtracker-api-mggy.onrender.com
 
 jobs:
   build:
