@@ -33,7 +33,7 @@ jobs:
       - name: Wait for the pushed commit to become healthy
         shell: bash
         run: |
-          for attempt in {1..30}; do
+          for attempt in {1..90}; do
             response="$(curl --silent --show-error --max-time 60 \
               --write-out '\n%{http_code}' \
               "$API_URL/v1/health/ready" || true)"
@@ -45,9 +45,9 @@ jobs:
               exit 0
             fi
 
-            echo "Attempt $attempt/30: status=${status:-unavailable}; waiting for Render."
+            echo "Attempt $attempt/90: status=${status:-unavailable}; waiting for Render."
             sleep 10
           done
 
-          echo "::error::Render did not serve healthy commit $GITHUB_SHA within 5 minutes."
+          echo "::error::Render did not serve healthy commit $GITHUB_SHA within 15 minutes."
           exit 1
