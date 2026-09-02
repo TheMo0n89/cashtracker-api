@@ -37,13 +37,10 @@ const REQUIRED_ENV: Record<string, string> = {
 
 function validateEnvironment(): void {
   const missing: string[] = [];
-  const present: string[] = [];
 
   for (const [key, description] of Object.entries(REQUIRED_ENV)) {
     if (!process.env[key] || process.env[key]!.trim() === '') {
       missing.push(`  ❌  ${key.padEnd(28)} — ${description}`);
-    } else {
-      present.push(`  ✅  ${key}`);
     }
   }
 
@@ -58,8 +55,6 @@ function validateEnvironment(): void {
   }
 
   console.log(`[ENV CHECK] NODE_ENV=${process.env.NODE_ENV}`);
-  console.log('[ENV CHECK] Required variables:');
-  present.forEach((line) => console.log(line));
 
   const databaseHost = process.env.DB_HOST || '';
   const databaseUsername = process.env.DB_USERNAME || '';
